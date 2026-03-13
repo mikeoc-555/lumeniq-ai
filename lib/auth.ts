@@ -1,6 +1,5 @@
-import { supabase } from './supabase'
+import { authClient } from './auth-client'
 import { ViewType } from '@/components/auth'
-import { Session } from '@supabase/supabase-js'
 import { usePostHog } from 'posthog-js/react'
 import { useState, useEffect } from 'react'
 
@@ -11,94 +10,49 @@ type UserTeam = {
   tier: string
 }
 
+// TODO: Implement team fetching with Convex
 export async function getUserTeam(
-  session: Session,
+  userId: string,
 ): Promise<UserTeam | undefined> {
-  const { data: defaultTeam } = await supabase!
-    .from('users_teams')
-    .select('teams (id, name, tier, email)')
-    .eq('user_id', session?.user.id)
-    .eq('is_default', true)
-    .single()
-
-  return defaultTeam?.teams as unknown as UserTeam
+  // This will be implemented when migrating teams to Convex
+  return undefined
 }
 
 export function useAuth(
   setAuthDialog: (value: boolean) => void,
   setAuthView: (value: ViewType) => void,
 ) {
-  const [session, setSession] = useState<Session | null>(null)
+  const { data: session, isPending } = authClient.useSession()
   const [userTeam, setUserTeam] = useState<UserTeam | undefined>(undefined)
-  const [recovery, setRecovery] = useState(false)
   const posthog = usePostHog()
 
   useEffect(() => {
-    if (!supabase) {
-      console.warn('Supabase is not initialized')
-      return setSession({ user: { email: 'demo@e2b.dev' } } as Session)
+    if (isPending) return
+
+    if (session?.user) {
+      getUserTeam(session.user.id).then(setUserTeam)
+      posthog.identify(session.user.id, {
+        email: session.user.email,
+      })
+      posthog.capture('sign_in')
+    } else {
+      // Demo mode when no auth is configured
+      if (!process.env.NEXT_PUBLIC_APP_URL) {
+        console.warn('Better Auth is not configured')
+      }
     }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session) {
-        getUserTeam(session).then(setUserTeam)
-        if (!session.user.user_metadata.is_fragments_user) {
-          supabase?.auth.updateUser({
-            data: { is_fragments_user: true },
-          })
-        }
-        posthog.identify(session?.user.id, {
-          email: session?.user.email,
-          supabase_id: session?.user.id,
-        })
-        posthog.capture('sign_in')
-      }
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-
-      if (_event === 'PASSWORD_RECOVERY') {
-        setRecovery(true)
-        setAuthView('update_password')
-        setAuthDialog(true)
-      }
-
-      if (_event === 'USER_UPDATED' && recovery) {
-        setRecovery(false)
-      }
-
-      if (_event === 'SIGNED_IN' && !recovery) {
-        getUserTeam(session as Session).then(setUserTeam)
-        setAuthDialog(false)
-        if (!session?.user.user_metadata.is_fragments_user) {
-          supabase?.auth.updateUser({
-            data: { is_fragments_user: true },
-          })
-        }
-        posthog.identify(session?.user.id, {
-          email: session?.user.email,
-          supabase_id: session?.user.id,
-        })
-        posthog.capture('sign_in')
-      }
-
-      if (_event === 'SIGNED_OUT') {
-        setAuthView('sign_in')
-        posthog.capture('sign_out')
-        posthog.reset()
-        setRecovery(false)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [recovery, setAuthDialog, setAuthView, posthog])
+  }, [session, isPending, posthog])
 
   return {
-    session,
+    session: session ? {
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+        image: session.user.image,
+      }
+    } : null,
     userTeam,
+    isPending,
   }
 }

@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
-import { Provider, SupabaseClient } from '@supabase/supabase-js'
+import { authClient } from '@/lib/auth-client'
 import {
   AlertCircle,
   CheckCircle2,
@@ -28,41 +28,11 @@ export type ViewType = (typeof VIEWS)[keyof typeof VIEWS]
 type RedirectTo = undefined | string
 
 export interface AuthProps {
-  supabaseClient: SupabaseClient
   socialLayout?: 'horizontal' | 'vertical'
-  providers?: Provider[]
+  providers?: ('github' | 'google')[]
   view?: ViewType
   redirectTo?: RedirectTo
   onlyThirdPartyProviders?: boolean
-  magicLink?: boolean
-  onSignUpValidate?: (email: string, password: string) => Promise<boolean>
-  metadata?: Record<string, any>
-}
-
-interface SubComponentProps {
-  supabaseClient: SupabaseClient
-  setAuthView: (view: ViewType) => void
-  setLoading: (loading: boolean) => void
-  setError: (error: string | null) => void
-  setMessage: (message: string | null) => void
-  clearMessages: () => void
-  loading: boolean
-  redirectTo?: RedirectTo
-}
-
-interface SocialAuthProps {
-  supabaseClient: SupabaseClient
-  providers: Provider[]
-  layout?: 'horizontal' | 'vertical'
-  redirectTo?: RedirectTo
-  setLoading: (loading: boolean) => void
-  setError: (error: string) => void
-  clearMessages: () => void
-  loading: boolean
-}
-
-interface EmailAuthProps extends SubComponentProps {
-  view: typeof VIEWS.SIGN_IN | typeof VIEWS.SIGN_UP
   magicLink?: boolean
   onSignUpValidate?: (email: string, password: string) => Promise<boolean>
   metadata?: Record<string, any>
@@ -79,7 +49,7 @@ interface UseAuthFormReturn {
 }
 
 const ProviderIcons: {
-  [key in Provider]?: React.ComponentType<{ className?: string }>
+  [key in 'github' | 'google']?: React.ComponentType<{ className?: string }>
 } = {
   github: ({ className }) => (
     <svg
@@ -132,8 +102,17 @@ function useAuthForm(): UseAuthFormReturn {
   }
 }
 
+interface SocialAuthProps {
+  providers: ('github' | 'google')[]
+  layout?: 'horizontal' | 'vertical'
+  redirectTo?: RedirectTo
+  setLoading: (loading: boolean) => void
+  setError: (error: string) => void
+  clearMessages: () => void
+  loading: boolean
+}
+
 function SocialAuth({
-  supabaseClient,
   providers,
   layout = 'vertical',
   redirectTo,
@@ -142,14 +121,19 @@ function SocialAuth({
   clearMessages,
   loading,
 }: SocialAuthProps) {
-  const handleProviderSignIn = async (provider: Provider) => {
+  const handleProviderSignIn = async (provider: 'github' | 'google') => {
     clearMessages()
     setLoading(true)
-    const { error } = await supabaseClient.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo },
-    })
-    if (error) setError(error.message)
+    try {
+      await authClient.signIn.social({
+        provider,
+        callbackURL: redirectTo,
+      })
+    } catch (error: any) {
+      setError(error.message || 'Failed to sign in with provider')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -182,12 +166,21 @@ function SocialAuth({
   )
 }
 
+interface SubComponentProps {
+  setAuthView: (view: ViewType) => void
+  setLoading: (loading: boolean) => void
+  setError: (error: string | null) => void
+  setMessage: (message: string | null) => void
+  clearMessages: () => void
+  loading: boolean
+  redirectTo?: RedirectTo
+}
+
 interface SignInFormProps extends SubComponentProps {
   magicLink?: boolean
 }
 
 function SignInForm({
-  supabaseClient,
   setAuthView,
   setLoading,
   setError,
@@ -203,7 +196,7 @@ function SignInForm({
     setLoading(true)
 
     try {
-      const { error } = await supabaseClient.auth.signInWithPassword({
+      const { error } = await authClient.signIn.email({
         email,
         password,
       })
@@ -274,7 +267,6 @@ interface SignUpFormProps extends SubComponentProps {
 }
 
 function SignUpForm({
-  supabaseClient,
   setAuthView,
   setLoading,
   setError,
@@ -306,18 +298,14 @@ function SignUpForm({
           )
         }
       }
-      const { data, error } = await supabaseClient.auth.signUp({
+      const { error } = await authClient.signUp.email({
         email,
         password,
-        options: {
-          emailRedirectTo: redirectTo,
-          data: metadata,
-        },
+        name: email.split('@')[0], // Default name from email
+        callbackURL: redirectTo,
       })
       if (error) throw error
-      if (data.user && !data.session) {
-        setMessage('Check your email for the confirmation link.')
-      }
+      setMessage('Check your email for the confirmation link.')
     } catch (error: any) {
       setError(error.message || 'An unexpected error occurred.')
     } finally {
@@ -384,84 +372,31 @@ function SignUpForm({
   )
 }
 
-function MagicLink({
-  supabaseClient,
-  setAuthView,
-  setLoading,
-  setError,
-  setMessage,
-  clearMessages,
-  loading,
-  redirectTo,
-}: SubComponentProps) {
-  const [email, setEmail] = useState('')
-
-  const handleMagicLinkSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    clearMessages()
-    setLoading(true)
-    const { error } = await supabaseClient.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: redirectTo,
-      },
-    })
-    if (error) setError(error.message)
-    else setMessage('Check your email for the magic link.')
-    setLoading(false)
-  }
-
-  return (
-    <form
-      id="auth-magic-link"
-      onSubmit={handleMagicLinkSignIn}
-      className="space-y-4"
-    >
-      <div className="space-y-2">
-        <Label htmlFor="email">Email address</Label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="email"
-          />
-        </div>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Send Magic Link
-      </Button>
-    </form>
-  )
-}
-
 function ForgottenPassword({
-  supabaseClient,
   setLoading,
   setError,
   setMessage,
   clearMessages,
   loading,
-  redirectTo,
-}: Omit<SubComponentProps, 'email' | 'setEmail'>) {
+}: Omit<SubComponentProps, 'setAuthView' | 'redirectTo'>) {
   const [email, setEmail] = useState('')
 
   const handlePasswordReset = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     clearMessages()
     setLoading(true)
-    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    })
-    if (error) setError(error.message)
-    else setMessage('Check your email for password reset instructions.')
-    setLoading(false)
+    try {
+      const { error } = await authClient.forgetPassword({
+        email,
+        redirectTo: window.location.origin + '/reset-password',
+      })
+      if (error) throw error
+      setMessage('Check your email for password reset instructions.')
+    } catch (error: any) {
+      setError(error.message || 'Failed to send reset email')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -495,7 +430,6 @@ function ForgottenPassword({
 }
 
 function UpdatePassword({
-  supabaseClient,
   setLoading,
   setError,
   setMessage,
@@ -503,7 +437,7 @@ function UpdatePassword({
   loading,
 }: Omit<
   SubComponentProps,
-  'setAuthView' | 'redirectTo' | 'email' | 'setEmail'
+  'setAuthView' | 'redirectTo'
 >) {
   const [password, setPassword] = useState('')
 
@@ -511,11 +445,18 @@ function UpdatePassword({
     e.preventDefault()
     clearMessages()
     setLoading(true)
-    const { error } = await supabaseClient.auth.updateUser({ password })
-    if (error) setError(error.message)
-    else setMessage('Password updated successfully.')
-    setLoading(false)
-    if (!error) setPassword('')
+    try {
+      const { error } = await authClient.resetPassword({
+        newPassword: password,
+      })
+      if (error) throw error
+      setMessage('Password updated successfully.')
+      setPassword('')
+    } catch (error: any) {
+      setError(error.message || 'Failed to update password')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -550,7 +491,6 @@ function UpdatePassword({
 }
 
 function Auth({
-  supabaseClient,
   socialLayout = 'vertical',
   providers,
   view = VIEWS.SIGN_IN,
@@ -587,7 +527,6 @@ function Auth({
   )
 
   const commonProps = {
-    supabaseClient,
     setAuthView: setAuthViewAndClearMessages,
     setLoading,
     setError,
@@ -615,9 +554,6 @@ function Auth({
     case VIEWS.FORGOTTEN_PASSWORD:
       viewComponent = <ForgottenPassword {...commonProps} />
       break
-    case VIEWS.MAGIC_LINK:
-      viewComponent = <MagicLink {...commonProps} />
-      break
     case VIEWS.UPDATE_PASSWORD:
       viewComponent = <UpdatePassword {...commonProps} />
       break
@@ -636,7 +572,6 @@ function Auth({
         <>
           {showSocialAuth && (
             <SocialAuth
-              supabaseClient={supabaseClient}
               providers={providers || []}
               layout={socialLayout}
               redirectTo={redirectTo}
@@ -648,7 +583,7 @@ function Auth({
           )}
           {showSeparator && (
             <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
+              <div className="absolute inset-0 flex items">
                 <Separator />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
@@ -666,16 +601,6 @@ function Auth({
         <div className="text-center text-sm space-y-1 mt-4">
           {authView === VIEWS.SIGN_IN && (
             <>
-              {magicLink && (
-                <Button
-                  variant="link"
-                  type="button"
-                  onClick={() => setAuthViewAndClearMessages(VIEWS.MAGIC_LINK)}
-                  className="p-0 h-auto font-normal"
-                >
-                  Sign in with magic link
-                </Button>
-              )}
               <p className="text-muted-foreground">
                 Don&apos;t have an account?{' '}
                 <Button
@@ -701,16 +626,6 @@ function Auth({
                 Sign in
               </Button>
             </p>
-          )}
-          {authView === VIEWS.MAGIC_LINK && (
-            <Button
-              variant="link"
-              type="button"
-              onClick={() => setAuthViewAndClearMessages(VIEWS.SIGN_IN)}
-              className="p-0 h-auto font-normal"
-            >
-              Sign in with password instead
-            </Button>
           )}
           {authView === VIEWS.FORGOTTEN_PASSWORD && (
             <Button
