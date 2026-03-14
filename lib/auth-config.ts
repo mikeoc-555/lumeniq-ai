@@ -1,12 +1,16 @@
 import { betterAuth } from "better-auth";
-import { convexAdapter } from "better-auth/adapters/convex";
 
+// Simple auth config without database adapter for MVP
+// Can be upgraded later with proper adapter
 export const auth = betterAuth({
-  database: convexAdapter({
-    // Convex client config - uses CONVEX_URL and CONVEX_AUTH_TOKEN from env
-  }),
+  // Database adapter can be added later when Convex integration is ready
+  // For now, using in-memory session storage for development
   emailAndPassword: {
     enabled: true,
+  },
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // 1 day
   },
 });
 

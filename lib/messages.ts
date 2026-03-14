@@ -17,9 +17,19 @@ export type MessageImage = {
   image: string
 }
 
+export type MessageChart = {
+  type: 'chart'
+  spec: {
+    data: Array<Record<string, unknown>>
+    layout: Record<string, unknown>
+    config?: Record<string, unknown>
+  }
+  title?: string
+}
+
 export type Message = {
   role: 'assistant' | 'user'
-  content: Array<MessageText | MessageCode | MessageImage>
+  content: Array<MessageText | MessageCode | MessageImage | MessageChart>
   object?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
 }

@@ -2,8 +2,9 @@ import { Message } from '@/lib/messages'
 import { FragmentSchema } from '@/lib/schema'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
-import { LoaderIcon, Terminal } from 'lucide-react'
+import { LoaderIcon, Terminal, BarChart3 } from 'lucide-react'
 import { useEffect } from 'react'
+import { PlotlyChart, PlotlyChartSpec } from './plotly-chart'
 
 export function Chat({
   messages,
@@ -48,6 +49,22 @@ export function Chat({
                 />
               )
             }
+            if (content.type === 'chart') {
+              return (
+                <div key={id} className="w-full my-2 rounded-lg overflow-hidden border border-border/50 bg-background/50">
+                  <div className="px-3 py-2 border-b border-border/50 flex items-center gap-2 bg-muted/30">
+                    <BarChart3 className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium font-sans">
+                      {content.title || 'Chart'}
+                    </span>
+                  </div>
+                  <div className="p-2">
+                    <PlotlyChart spec={content.spec as PlotlyChartSpec} height={350} />
+                  </div>
+                </div>
+              )
+            }
+            return null
           })}
           {message.object && (
             <div

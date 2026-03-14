@@ -21,9 +21,22 @@ import {
   GitHubLogoIcon,
   TwitterLogoIcon,
 } from '@radix-ui/react-icons'
-import { Session } from '@supabase/supabase-js'
 import { ArrowRight, LogOut, Trash, Undo } from 'lucide-react'
 import Link from 'next/link'
+
+// Generic session type that works with both Supabase and Better Auth
+export interface NavSession {
+  user: {
+    id: string
+    email: string
+    name?: string
+    image?: string | null
+    user_metadata?: {
+      avatar_url?: string
+    }
+  }
+  access_token?: string | null
+}
 
 export function NavBar({
   session,
@@ -35,7 +48,7 @@ export function NavBar({
   onUndo,
   canUndo,
 }: {
-  session: Session | null
+  session: NavSession | null
   showLogin: () => void
   signOut: () => void
   onClear: () => void
@@ -108,6 +121,7 @@ export function NavBar({
                       <AvatarImage
                         src={
                           session.user.user_metadata?.avatar_url ||
+                          session.user.image ||
                           'https://avatar.vercel.sh/' + session.user.email
                         }
                         alt={session.user.email}

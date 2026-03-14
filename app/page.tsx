@@ -286,14 +286,11 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen max-h-screen">
-      {supabase && (
-        <AuthDialog
-          open={isAuthDialogOpen}
-          setOpen={setAuthDialog}
-          view={authView}
-          supabase={supabase}
-        />
-      )}
+      <AuthDialog
+        open={isAuthDialogOpen}
+        setOpen={setAuthDialog}
+        view={authView}
+      />
       <div className="grid w-full md:grid-cols-2">
         <div
           className={`flex flex-col w-full max-h-full max-w-[800px] mx-auto px-4 overflow-auto ${fragment ? 'col-span-1' : 'col-span-2'}`}
@@ -347,7 +344,7 @@ export default function Home() {
         </div>
         <Preview
           teamID={userTeam?.id}
-          accessToken={session?.access_token}
+          accessToken={session?.access_token ?? undefined}
           selectedTab={currentTab}
           onSelectedTabChange={setCurrentTab}
           isChatLoading={isLoading}

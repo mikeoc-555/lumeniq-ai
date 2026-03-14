@@ -386,7 +386,8 @@ function ForgottenPassword({
     clearMessages()
     setLoading(true)
     try {
-      const { error } = await authClient.forgetPassword({
+      // Use type assertion since better-auth client methods are dynamically generated
+      const { error } = await (authClient as any).forgetPassword({
         email,
         redirectTo: window.location.origin + '/reset-password',
       })

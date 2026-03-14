@@ -217,34 +217,74 @@ export const backtestTool = tool(
 );
 
 /**
- * Chart Generation Tool - Creates Plotly chart specs
+ * Chart Generation Tool - Creates Plotly chart specs for interactive visualization
  */
 export const chartTool = tool(
   async ({ chartType, data, title, options }) => {
-    // Generate Plotly chart specification
+    // Generate Plotly chart specification with dark theme
     const chartSpec: Record<string, any> = {
       data: [],
       layout: {
-        title: title,
+        title: {
+          text: title,
+          font: { size: 16, color: '#f1f5f9' },
+        },
         template: "plotly_dark",
         paper_bgcolor: "rgba(0,0,0,0)",
-        plot_bgcolor: "rgba(0,0,0,0)",
-        font: { color: "#fff" },
+        plot_bgcolor: "rgba(15,23,42,1)",
+        font: { 
+          color: "#94a3b8",
+          family: "Inter, system-ui, sans-serif",
+        },
+        showlegend: true,
+        legend: {
+          orientation: "h",
+          y: -0.15,
+          x: 0.5,
+          xanchor: "center",
+        },
+        margin: { t: 60, r: 20, b: 60, l: 60 },
+        xaxis: {
+          gridcolor: "rgba(148, 163, 184, 0.1)",
+          zerolinecolor: "rgba(148, 163, 184, 0.2)",
+        },
+        yaxis: {
+          gridcolor: "rgba(148, 163, 184, 0.1)",
+          zerolinecolor: "rgba(148, 163, 184, 0.2)",
+        },
         ...options,
       },
+      config: {
+        responsive: true,
+        displayModeBar: 'hover' as const,
+        displaylogo: false,
+      },
+    };
+
+    // Color palette for charts
+    const colors = {
+      primary: "#3b82f6",
+      secondary: "#8b5cf6",
+      success: "#22c55e",
+      danger: "#ef4444",
+      warning: "#f59e0b",
+      info: "#06b6d4",
     };
 
     switch (chartType) {
       case "line":
         chartSpec.data.push({
           type: "scatter",
-          mode: "lines",
+          mode: "lines+markers",
           x: data.x || [],
           y: data.y || [],
-          line: { color: "#3b82f6", width: 2 },
+          line: { color: colors.primary, width: 2 },
+          marker: { size: 4 },
           name: data.name || "Series",
+          hovertemplate: '%{x}<br>%{y}<extra></extra>',
         });
         break;
+
       case "candlestick":
         chartSpec.data.push({
           type: "candlestick",
@@ -253,18 +293,135 @@ export const chartTool = tool(
           high: data.high || [],
           low: data.low || [],
           close: data.close || [],
-          increasing: { line: { color: "#22c55e" } },
-          decreasing: { line: { color: "#ef4444" } },
+          increasing: { 
+            line: { color: colors.success, width: 1 },
+            fillcolor: colors.success,
+          },
+          decreasing: { 
+            line: { color: colors.danger, width: 1 },
+            fillcolor: colors.danger,
+          },
+          whiskerwidth: 0,
+          hoverinfo: 'x:text',
         });
-        chartSpec.layout.xaxis = { rangeslider: { visible: false } };
+        // Add rangeslider for candlestick
+        chartSpec.layout.xaxis = {
+          ...chartSpec.layout.xaxis,
+          rangeslider: { visible: true, bgcolor: 'rgba(0,0,0,0.2)' },
+        };
         break;
+
       case "bar":
         chartSpec.data.push({
           type: "bar",
           x: data.x || [],
           y: data.y || [],
-          marker: { color: "#3b82f6" },
+          marker: { 
+            color: colors.primary,
+            line: { color: 'rgba(59, 130, 246, 0.8)', width: 1 },
+          },
+          name: data.name || "Values",
+          hovertemplate: '%{x}: %{y}<extra></extra>',
         });
+        break;
+
+      case "scatter":
+        chartSpec.data.push({
+          type: "scatter",
+          mode: "markers",
+          x: data.x || [],
+          y: data.y || [],
+          marker: { 
+            color: colors.secondary,
+            size: 8,
+            line: { color: 'rgba(139, 92, 246, 0.5)', width: 1 },
+          },
+          name: data.name || "Points",
+          hovertemplate: '(%{x}, %{y})<extra></extra>',
+        });
+        break;
+
+      case "pie":
+        chartSpec.data.push({
+          type: "pie",
+          labels: data.labels || data.x || [],
+          values: data.values || data.y || [],
+          hole: 0.4,
+          marker: {
+            colors: [colors.primary, colors.secondary, colors.success, colors.danger, colors.warning, colors.info],
+          },
+          textinfo: 'percent+label',
+          textposition: 'outside',
+          hovertemplate: '%{label}: %{value} (%{percent})<extra></extra>',
+        });
+        // Remove grid for pie charts
+        delete chartSpec.layout.xaxis;
+        delete chartSpec.layout.yaxis;
+        break;
+
+      case "area":
+        chartSpec.data.push({
+          type: "scatter",
+          mode: "lines",
+          x: data.x || [],
+          y: data.y || [],
+          fill: "tozeroy",
+          fillcolor: "rgba(59, 130, 246, 0.2)",
+          line: { color: colors.primary, width: 2 },
+          name: data.name || "Area",
+          hovertemplate: '%{x}<br>%{y}<extra></extra>',
+        });
+        break;
+
+      case "multi_line":
+        // Support for multiple series
+        if (data.series && Array.isArray(data.series)) {
+          const seriesColors = [colors.primary, colors.secondary, colors.success, colors.danger, colors.warning];
+          data.series.forEach((series: any, idx: number) => {
+            chartSpec.data.push({
+              type: "scatter",
+              mode: "lines",
+              x: series.x || data.x || [],
+              y: series.y || [],
+              line: { color: seriesColors[idx % seriesColors.length], width: 2 },
+              name: series.name || `Series ${idx + 1}`,
+              hovertemplate: '%{x}<br>%{y}<extra></extra>',
+            });
+          });
+        }
+        break;
+
+      case "indicator_overlay":
+        // For showing price + indicators (RSI, MACD, etc.)
+        // Main price line
+        chartSpec.data.push({
+          type: "scatter",
+          mode: "lines",
+          x: data.x || [],
+          y: data.y || [],
+          line: { color: colors.primary, width: 2 },
+          name: data.name || "Price",
+          yaxis: 'y',
+        });
+        // Add indicator as secondary series
+        if (data.indicator_y) {
+          chartSpec.data.push({
+            type: "scatter",
+            mode: "lines",
+            x: data.x || [],
+            y: data.indicator_y,
+            line: { color: colors.warning, width: 1.5, dash: 'dash' },
+            name: data.indicator_name || "Indicator",
+            yaxis: 'y2',
+          });
+          // Add secondary y-axis
+          chartSpec.layout.yaxis2 = {
+            overlaying: 'y',
+            side: 'right',
+            gridcolor: "rgba(148, 163, 184, 0.1)",
+            zerolinecolor: "rgba(148, 163, 184, 0.2)",
+          };
+        }
         break;
     }
 
@@ -272,21 +429,39 @@ export const chartTool = tool(
   },
   {
     name: "generate_chart",
-    description: "Generate a Plotly chart specification for interactive visualization",
+    description: "Generate a Plotly chart specification for interactive visualization. Returns JSON that will be rendered as an interactive chart. Supports: line, candlestick, bar, scatter, pie, area, multi_line, indicator_overlay.",
     schema: z.object({
-      chartType: z.enum(["line", "candlestick", "bar", "scatter", "pie"]).describe("Type of chart"),
+      chartType: z.enum([
+        "line", 
+        "candlestick", 
+        "bar", 
+        "scatter", 
+        "pie", 
+        "area", 
+        "multi_line", 
+        "indicator_overlay"
+      ]).describe("Type of chart to generate"),
       data: z.object({
-        x: z.array(z.any()).optional(),
-        y: z.array(z.any()).optional(),
-        dates: z.array(z.string()).optional(),
-        open: z.array(z.number()).optional(),
-        high: z.array(z.number()).optional(),
-        low: z.array(z.number()).optional(),
-        close: z.array(z.number()).optional(),
-        name: z.string().optional(),
-      }).describe("Chart data"),
+        x: z.array(z.any()).optional().describe("X-axis values (dates, categories, etc.)"),
+        y: z.array(z.any()).optional().describe("Y-axis values (prices, volumes, etc.)"),
+        dates: z.array(z.string()).optional().describe("Date array for candlestick charts"),
+        open: z.array(z.number()).optional().describe("Open prices for candlestick"),
+        high: z.array(z.number()).optional().describe("High prices for candlestick"),
+        low: z.array(z.number()).optional().describe("Low prices for candlestick"),
+        close: z.array(z.number()).optional().describe("Close prices for candlestick"),
+        name: z.string().optional().describe("Series name for legend"),
+        labels: z.array(z.string()).optional().describe("Labels for pie chart"),
+        values: z.array(z.number()).optional().describe("Values for pie chart"),
+        series: z.array(z.object({
+          x: z.array(z.any()).optional(),
+          y: z.array(z.any()).optional(),
+          name: z.string().optional(),
+        })).optional().describe("Multiple series for multi_line chart"),
+        indicator_y: z.array(z.number()).optional().describe("Indicator values for overlay"),
+        indicator_name: z.string().optional().describe("Name of the indicator"),
+      }).describe("Chart data - provide appropriate fields based on chartType"),
       title: z.string().describe("Chart title"),
-      options: z.record(z.any()).optional().describe("Additional layout options"),
+      options: z.record(z.any()).optional().describe("Additional Plotly layout options (xaxis title, yaxis title, etc.)"),
     }),
   }
 );

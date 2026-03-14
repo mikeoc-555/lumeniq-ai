@@ -1,6 +1,5 @@
 import { createDeepAgent } from "deepagents";
 import { tradingTools } from "./tools";
-import { ChatOpenAI } from "@langchain/openai";
 
 /**
  * System prompt for the trading research agent
@@ -108,26 +107,15 @@ export function createTradingAgent(config?: {
 }) {
   const modelName = config?.modelName || process.env.OPENROUTER_MODEL || "anthropic/claude-3.5-sonnet";
   
-  // Create LLM client
-  // Can use OpenRouter or direct provider
-  const llm = new ChatOpenAI({
-    modelName,
-    openAIApiKey: config?.apiKey || process.env.OPENROUTER_API_KEY,
-    configuration: {
-      baseURL: config?.baseURL || process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
-      defaultHeaders: {
-        "HTTP-Referer": "https://lumeniq.ai",
-        "X-Title": "Lumeniq AI Trading Research",
-      },
-    },
-    temperature: 0.1, // Low temperature for analytical tasks
-  });
+  // Use OpenRouter model string directly
+  // DeepAgents will handle the API calls
+  const openRouterModel = `openrouter/${modelName}`;
 
   // Create the deep agent with trading tools
   const agent = createDeepAgent({
     tools: tradingTools,
     systemPrompt: tradingAgentPrompt,
-    llm,
+    model: openRouterModel,
   });
 
   return agent;

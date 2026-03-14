@@ -19,6 +19,41 @@ interface TradingAgentRequest {
   apiKey?: string;
 }
 
+/**
+ * Parse chart specs from tool call results
+ */
+function extractChartFromToolCall(toolCall: any): { spec: any; title: string } | null {
+  if (toolCall.name !== "generate_chart") return null;
+  
+  try {
+    const args = typeof toolCall.args === 'string' ? JSON.parse(toolCall.args) : toolCall.args;
+    const result = typeof toolCall.result === 'string' ? JSON.parse(toolCall.result) : toolCall.result;
+    
+    // The result contains the Plotly spec
+    if (result && result.data && Array.isArray(result.data)) {
+      return {
+        spec: result,
+        title: args.title || "Chart",
+      };
+    }
+    
+    // Sometimes the result is a JSON string
+    if (typeof toolCall.result === 'string') {
+      const parsed = JSON.parse(toolCall.result);
+      if (parsed.data && Array.isArray(parsed.data)) {
+        return {
+          spec: parsed,
+          title: args.title || "Chart",
+        };
+      }
+    }
+  } catch (e) {
+    console.error("Error parsing chart from tool call:", e);
+  }
+  
+  return null;
+}
+
 export async function POST(req: Request) {
   const {
     messages,
@@ -58,8 +93,8 @@ export async function POST(req: Request) {
       content: m.content,
     }));
 
-    // Stream the response
-    const stream = await agent.stream({
+    // Stream the response - use any to avoid complex type inference
+    const stream = await (agent as any).stream({
       messages: langGraphMessages,
     });
 
@@ -71,14 +106,52 @@ export async function POST(req: Request) {
           for await (const chunk of stream) {
             // Handle different chunk types from DeepAgents
             if (chunk.content) {
-              const event = {
-                type: "content",
-                content: chunk.content,
-              };
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+              // Check if content contains a chart JSON
+              let contentToSend = chunk.content;
+              
+              // Try to detect inline chart specs in the content
+              try {
+                const chartMatch = contentToSend.match(/```chart\n([\s\S]*?)\n```/);
+                if (chartMatch) {
+                  const chartSpec = JSON.parse(chartMatch[1]);
+                  const event = {
+                    type: "chart",
+                    spec: chartSpec,
+                    title: chartSpec.layout?.title?.text || chartSpec.layout?.title || "Chart",
+                  };
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                  // Remove the chart block from content
+                  contentToSend = contentToSend.replace(chartMatch[0], "").trim();
+                }
+              } catch (e) {
+                // Not a valid chart, continue with normal content
+              }
+              
+              if (contentToSend) {
+                const event = {
+                  type: "content",
+                  content: contentToSend,
+                };
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+              }
             }
             
             if (chunk.tool_calls) {
+              // Check for chart tool calls
+              for (const toolCall of chunk.tool_calls) {
+                if (toolCall.name === "generate_chart") {
+                  const chartData = extractChartFromToolCall(toolCall);
+                  if (chartData) {
+                    const event = {
+                      type: "chart",
+                      spec: chartData.spec,
+                      title: chartData.title,
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                  }
+                }
+              }
+              
               const event = {
                 type: "tool_call",
                 tool_calls: chunk.tool_calls,
@@ -98,6 +171,7 @@ export async function POST(req: Request) {
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (error) {
+          console.error("Stream error:", error);
           controller.error(error);
         }
       },

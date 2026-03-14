@@ -1,5 +1,6 @@
 import { authClient } from './auth-client'
 import { ViewType } from '@/components/auth'
+import { type NavSession } from '@/components/navbar'
 import { usePostHog } from 'posthog-js/react'
 import { useState, useEffect } from 'react'
 
@@ -43,16 +44,22 @@ export function useAuth(
     }
   }, [session, isPending, posthog])
 
+  // Transform to NavSession format for NavBar compatibility
+  const navSession: NavSession | null = session ? {
+    user: {
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      image: session.user.image,
+    },
+    access_token: session.session?.token || null,
+  } : null
+
   return {
-    session: session ? {
-      user: {
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
-        image: session.user.image,
-      }
-    } : null,
+    session: navSession,
     userTeam,
     isPending,
   }
 }
+
+export type { Session } from 'better-auth/client'
